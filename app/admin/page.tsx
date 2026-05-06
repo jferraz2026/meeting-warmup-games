@@ -4,12 +4,10 @@ import { Question } from '@/lib/types'
 
 const REACTION_EMOJIS = ['😄', '😅', '🤔', '😂']
 
-const EMPTY_TRIVIA_FORM = { text: '', options: ['', '', '', ''], correct_index: 0, question_type: 'trivia' as const }
-const EMPTY_REACTION_FORM = { text: '', options: [...REACTION_EMOJIS], correct_index: null as null, question_type: 'reaction' as const }
+type FormState = { text: string; options: string[]; correct_index: number | null; question_type: 'trivia' | 'reaction' }
 
-type FormState =
-  | { text: string; options: string[]; correct_index: number; question_type: 'trivia' }
-  | { text: string; options: string[]; correct_index: null; question_type: 'reaction' }
+const EMPTY_TRIVIA_FORM: FormState = { text: '', options: ['', '', '', ''], correct_index: 0, question_type: 'trivia' }
+const EMPTY_REACTION_FORM: FormState = { text: '', options: [...REACTION_EMOJIS], correct_index: null, question_type: 'reaction' }
 
 export default function AdminPage() {
   const [questions, setQuestions] = useState<Question[]>([])
