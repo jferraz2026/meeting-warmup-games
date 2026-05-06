@@ -50,6 +50,11 @@ export default function HomePage() {
 
         {mode === 'home' && (
           <div className="space-y-4">
+            {error && (
+              <div className="bg-red-500/20 border border-red-500 rounded-xl px-4 py-3 text-red-300 text-sm text-center">
+                {error}
+              </div>
+            )}
             <button
               onClick={handleHost}
               disabled={loading}
