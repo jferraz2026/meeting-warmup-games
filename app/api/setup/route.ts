@@ -61,8 +61,17 @@ export async function GET() {
     await query(`CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id)`)
     await query(`CREATE INDEX IF NOT EXISTS idx_answers_game_question ON answers(game_id, question_id)`)
 
-    // Clear old questions and seed icebreaker questions
-    await query(`DELETE FROM questions`)
+    // Only reseed if no reaction questions exist yet
+    const existing = await query(`SELECT COUNT(*)::int as count FROM questions WHERE question_type = 'reaction'`)
+    const hasReactionQuestions = (existing[0] as { count: number }).count > 0
+    if (hasReactionQuestions) {
+      const final = await query('SELECT COUNT(*)::int as count FROM questions')
+      return NextResponse.json({ ok: true, message: 'Database ready', questions: (final[0] as { count: number }).count })
+    }
+
+    // Delete old trivia-only questions (safe to delete since no game is using them)
+    await query(`DELETE FROM answers WHERE question_id IN (SELECT id FROM questions WHERE question_type = 'trivia')`)
+    await query(`DELETE FROM questions WHERE question_type = 'trivia'`)
 
     await query(`
       INSERT INTO questions (text, options, correct_index, question_type) VALUES
