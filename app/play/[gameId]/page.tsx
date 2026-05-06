@@ -1,10 +1,22 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { GameState, Player } from '@/lib/types'
 import { ANSWER_COLORS } from '@/lib/utils'
 
-export default function PlayPage() {
+export default function PlayPageWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <p className="text-white text-xl animate-pulse">Loading...</p>
+      </div>
+    }>
+      <PlayPage />
+    </Suspense>
+  )
+}
+
+function PlayPage() {
   const { gameId } = useParams<{ gameId: string }>()
   const searchParams = useSearchParams()
   const playerName = searchParams.get('name') || 'Player'

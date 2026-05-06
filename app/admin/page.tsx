@@ -13,10 +13,15 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false)
 
   async function loadQuestions() {
-    const res = await fetch('/api/questions')
-    const data = await res.json()
-    setQuestions(data)
-    setLoading(false)
+    try {
+      const res = await fetch('/api/questions')
+      const data = await res.json()
+      setQuestions(Array.isArray(data) ? data : [])
+    } catch {
+      setQuestions([])
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { loadQuestions() }, [])
