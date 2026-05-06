@@ -2,7 +2,8 @@ export interface Question {
   id: string
   text: string
   options: string[]
-  correct_index: number
+  correct_index: number | null  // null for reaction questions
+  question_type: 'trivia' | 'reaction'
   created_at: string
 }
 

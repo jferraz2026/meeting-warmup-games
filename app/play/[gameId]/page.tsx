@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { GameState, Player } from '@/lib/types'
-import { ANSWER_COLORS } from '@/lib/utils'
+import { ANSWER_COLORS, REACTION_EMOJIS, REACTION_COLORS } from '@/lib/utils'
 
 export default function PlayPageWrapper() {
   return (
@@ -28,7 +28,6 @@ function PlayPage() {
   const [submitting, setSubmitting] = useState(false)
   const playerIdRef = useRef<string | null>(null)
 
-  // Register player on mount
   useEffect(() => {
     const stored = sessionStorage.getItem(`player_${gameId}`)
     if (stored) {
@@ -37,7 +36,6 @@ function PlayPage() {
       setRegistered(true)
       return
     }
-
     async function register() {
       try {
         const res = await fetch('/api/players', {
@@ -116,8 +114,8 @@ function PlayPage() {
 
   const { game, currentQuestion, players, myAnswer } = state
   const myPlayer = players.find(p => p.id === playerId)
+  const isReaction = currentQuestion?.question_type === 'reaction'
 
-  // WAITING
   if (game.status === 'waiting') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 flex items-center justify-center p-4">
@@ -139,16 +137,15 @@ function PlayPage() {
     )
   }
 
-  // FINISHED
   if (game.status === 'finished') {
     const sorted = [...players].sort((a, b) => b.score - a.score)
     const myRank = sorted.findIndex(p => p.id === playerId) + 1
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 flex items-center justify-center p-4">
         <div className="text-center w-full max-w-sm">
-          <div className="text-5xl mb-4">🏆</div>
-          <h1 className="text-3xl font-bold text-white mb-1">Game Over!</h1>
-          <p className="text-indigo-300 mb-6">You finished #{myRank} with {myPlayer?.score ?? 0} points</p>
+          <div className="text-5xl mb-4">🎉</div>
+          <h1 className="text-3xl font-bold text-white mb-1">That's a wrap!</h1>
+          <p className="text-indigo-300 mb-6">Great warmup session, {playerName}!</p>
           <div className="bg-white/10 rounded-2xl p-4 space-y-3">
             {sorted.map((p, i) => (
               <div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl ${p.id === playerId ? 'bg-white/10' : ''}`}>
@@ -163,7 +160,6 @@ function PlayPage() {
     )
   }
 
-  // ACTIVE or SHOWING_RESULTS
   if (!currentQuestion) return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
       <p className="text-white animate-pulse">Loading question...</p>
@@ -171,38 +167,64 @@ function PlayPage() {
   )
 
   const showingResults = game.status === 'showing_results'
+  const hasAnswered = myAnswer !== null
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col p-4">
       {/* Score bar */}
       <div className="flex items-center justify-between mb-4 px-1">
         <span className="text-gray-400 text-sm">{playerName}</span>
-        <span className="text-indigo-400 font-bold">{myPlayer?.score ?? 0} pts</span>
+        {myPlayer && myPlayer.score > 0 && (
+          <span className="text-indigo-400 font-bold">{myPlayer.score} pts</span>
+        )}
       </div>
 
       {/* Question */}
-      <div className="bg-gray-800 rounded-2xl p-6 mb-6 flex-shrink-0">
+      <div className="bg-gray-800 rounded-2xl p-6 mb-4 flex-shrink-0">
+        {isReaction && (
+          <p className="text-indigo-400 text-xs mb-2 text-center">💬 React with an emoji!</p>
+        )}
         <p className="text-white text-xl font-semibold text-center leading-relaxed">
           {currentQuestion.text}
         </p>
       </div>
 
-      {/* Status message */}
-      {myAnswer !== null && !showingResults && (
+      {/* Answered confirmation */}
+      {hasAnswered && !showingResults && (
         <div className="text-center mb-4">
-          <p className="text-green-400 font-bold text-lg">✅ Answer locked in!</p>
+          <p className="text-green-400 font-bold text-lg">
+            {isReaction ? `${REACTION_EMOJIS[myAnswer]} Reaction sent!` : '✅ Answer locked in!'}
+          </p>
           <p className="text-gray-400 text-sm">Waiting for others...</p>
         </div>
       )}
 
-      {/* Answer buttons */}
+      {/* Buttons grid */}
       <div className="grid grid-cols-2 gap-3 flex-1">
         {currentQuestion.options.map((opt, i) => {
-          const color = ANSWER_COLORS[i]
           const isMyAnswer = myAnswer === i
-          const isCorrect = i === currentQuestion.correct_index
-          const hasAnswered = myAnswer !== null
 
+          if (isReaction) {
+            const rc = REACTION_COLORS[i]
+            let bgClass = `${rc.bg} ${!hasAnswered ? rc.hover : ''}`
+            if (hasAnswered && isMyAnswer) bgClass = `${rc.bg} ring-4 ring-white scale-105`
+            if (hasAnswered && !isMyAnswer) bgClass = 'bg-gray-700 opacity-40'
+
+            return (
+              <button
+                key={i}
+                onClick={() => handleAnswer(i)}
+                disabled={hasAnswered || submitting}
+                className={`${bgClass} rounded-2xl p-6 flex flex-col items-center justify-center gap-2 transition-all active:scale-95 disabled:cursor-default min-h-[130px]`}
+              >
+                <span className="text-5xl">{opt}</span>
+              </button>
+            )
+          }
+
+          // Trivia
+          const color = ANSWER_COLORS[i]
+          const isCorrect = i === currentQuestion.correct_index
           let bgClass = `${color.bg} ${!hasAnswered ? color.hover : ''}`
           if (showingResults) {
             bgClass = isCorrect ? 'bg-green-500' : 'bg-gray-700 opacity-50'
@@ -220,15 +242,9 @@ function PlayPage() {
               className={`${bgClass} rounded-2xl p-6 flex flex-col items-center justify-center gap-2 transition-all active:scale-95 disabled:cursor-default min-h-[120px]`}
             >
               <span className={`text-3xl ${color.text}`}>{color.label}</span>
-              <span className={`font-bold text-center text-sm leading-tight ${color.text} ${showingResults && !isCorrect ? 'text-gray-300' : ''}`}>
-                {opt}
-              </span>
-              {showingResults && isCorrect && (
-                <span className="text-white text-xs">✓ Correct!</span>
-              )}
-              {showingResults && isMyAnswer && !isCorrect && (
-                <span className="text-gray-300 text-xs">Your answer</span>
-              )}
+              <span className={`font-bold text-center text-sm leading-tight ${color.text}`}>{opt}</span>
+              {showingResults && isCorrect && <span className="text-white text-xs">✓ Correct!</span>}
+              {showingResults && isMyAnswer && !isCorrect && <span className="text-gray-300 text-xs">Your answer</span>}
             </button>
           )
         })}

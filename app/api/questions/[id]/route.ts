@@ -3,10 +3,10 @@ import { query } from '@/lib/db'
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { text, options, correct_index } = await req.json()
+    const { text, options, correct_index, question_type } = await req.json()
     const result = await query(
-      `UPDATE questions SET text = $1, options = $2, correct_index = $3 WHERE id = $4 RETURNING *`,
-      [text, JSON.stringify(options), correct_index, params.id]
+      `UPDATE questions SET text = $1, options = $2, correct_index = $3, question_type = $4 WHERE id = $5 RETURNING *`,
+      [text, JSON.stringify(options), correct_index ?? null, question_type ?? 'trivia', params.id]
     )
     return NextResponse.json(result[0])
   } catch (err) {

@@ -8,3 +8,11 @@ export const ANSWER_COLORS = [
   { bg: 'bg-yellow-400', hover: 'hover:bg-yellow-500', text: 'text-black', label: '●', name: 'Yellow' },
   { bg: 'bg-green-500', hover: 'hover:bg-green-600', text: 'text-white', label: '■', name: 'Green' },
 ]
+
+export const REACTION_EMOJIS = ['😄', '😅', '🤔', '😂']
+export const REACTION_COLORS = [
+  { bg: 'bg-yellow-400', hover: 'hover:bg-yellow-500', text: 'text-black' },
+  { bg: 'bg-blue-500', hover: 'hover:bg-blue-600', text: 'text-white' },
+  { bg: 'bg-purple-500', hover: 'hover:bg-purple-600', text: 'text-white' },
+  { bg: 'bg-pink-500', hover: 'hover:bg-pink-600', text: 'text-white' },
+]

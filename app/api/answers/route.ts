@@ -9,7 +9,8 @@ export async function POST(req: NextRequest) {
     const questions = await query<Question>('SELECT * FROM questions WHERE id = $1', [question_id])
     if (!questions.length) return NextResponse.json({ error: 'Question not found' }, { status: 404 })
     const question = questions[0]
-    const is_correct = option_index === question.correct_index
+
+    const is_correct = question.question_type === 'trivia' && option_index === question.correct_index
 
     const existing = await query<Answer>(
       'SELECT * FROM answers WHERE game_id = $1 AND question_id = $2 AND player_id = $3',
@@ -24,10 +25,7 @@ export async function POST(req: NextRequest) {
     )
 
     if (is_correct) {
-      await query(
-        'UPDATE players SET score = score + 100 WHERE id = $1',
-        [player_id]
-      )
+      await query('UPDATE players SET score = score + 100 WHERE id = $1', [player_id])
     }
 
     return NextResponse.json(result[0])
