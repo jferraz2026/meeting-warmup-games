@@ -20,6 +20,7 @@ export interface Player {
   id: string
   game_id: string
   name: string
+  avatar: string
   score: number
   joined_at: string
 }

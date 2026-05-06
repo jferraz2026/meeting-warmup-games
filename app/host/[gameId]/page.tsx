@@ -90,7 +90,7 @@ export default function HostPage() {
 
   const { game, currentQuestion, players, answerCounts } = state
   const totalAnswers = answerCounts.reduce((s, a) => s + a.count, 0)
-  const joinUrl = `${origin}/play/${game.id}?name=`
+  const joinUrl = `${origin}/play/${game.id}`
   const isLastQuestion = game.current_question_index >= game.question_ids.length - 1
   const isReaction = currentQuestion?.question_type === 'reaction'
 
@@ -250,9 +250,10 @@ export default function HostPage() {
                 <p className="text-gray-500 text-sm text-center py-4">No players yet</p>
               )}
               {players.map((player, i) => (
-                <div key={player.id} className="flex items-center gap-3 py-2 border-b border-gray-700 last:border-0">
-                  <span className="text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
-                  <span className="flex-1 font-medium truncate">{player.name}</span>
+                <div key={player.id} className="flex items-center gap-2 py-2 border-b border-gray-700 last:border-0">
+                  <span className="text-sm text-gray-500 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`}</span>
+                  <span className="text-xl">{player.avatar}</span>
+                  <span className="flex-1 font-medium truncate text-sm">{player.name}</span>
                   <span className="text-indigo-400 font-mono text-sm font-bold">{player.score}</span>
                 </div>
               ))}

@@ -25,14 +25,14 @@ export default function HomePage() {
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault()
-    if (!code.trim() || !name.trim()) return
+    if (!code.trim()) return
     setLoading(true)
     setError('')
     try {
       const res = await fetch(`/api/games/code/${code.trim().toUpperCase()}`)
       const game = await res.json()
       if (game.error) throw new Error('Game not found. Check the code.')
-      router.push(`/play/${game.id}?name=${encodeURIComponent(name.trim())}`)
+      router.push(`/play/${game.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setLoading(false)
@@ -90,24 +90,13 @@ export default function HomePage() {
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-center text-2xl font-mono tracking-widest placeholder-white/30 focus:outline-none focus:border-indigo-400"
               />
             </div>
-            <div>
-              <label className="block text-indigo-300 text-sm mb-1">Your Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="Enter your name"
-                maxLength={20}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-indigo-400"
-              />
-            </div>
             {error && <p className="text-red-400 text-sm text-center">{error}</p>}
             <button
               type="submit"
-              disabled={loading || !code.trim() || !name.trim()}
+              disabled={loading || !code.trim()}
               className="w-full py-4 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-xl font-bold rounded-2xl transition-all"
             >
-              {loading ? '⏳ Joining...' : '✅ Join Game'}
+              {loading ? '⏳ Finding game...' : '✅ Find Game'}
             </button>
             <button
               type="button"

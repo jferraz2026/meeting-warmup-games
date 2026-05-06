@@ -37,10 +37,12 @@ export async function GET() {
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         game_id UUID REFERENCES games(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
+        avatar TEXT DEFAULT '🐶',
         score INTEGER DEFAULT 0,
         joined_at TIMESTAMPTZ DEFAULT NOW()
       )
     `)
+    await query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS avatar TEXT DEFAULT '🐶'`)
 
     await query(`
       CREATE TABLE IF NOT EXISTS answers (
