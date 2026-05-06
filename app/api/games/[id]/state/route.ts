@@ -11,37 +11,44 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!games.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const game = games[0]
 
-    let currentQuestion: Question | null = null
-    let answerCounts: { option_index: number; count: number }[] = []
-    let myAnswer: number | null = null
-
-    if (game.current_question_index >= 0 && game.question_ids.length > 0) {
-      const questionId = game.question_ids[game.current_question_index]
-      const questions = await query<Question>('SELECT * FROM questions WHERE id = $1', [questionId])
-      if (questions.length) currentQuestion = questions[0]
-
-      const counts = await query<{ option_index: string; count: string }>(
-        `SELECT option_index, COUNT(*)::int as count FROM answers
-         WHERE game_id = $1 AND question_id = $2 GROUP BY option_index`,
-        [params.id, questionId]
-      )
-      answerCounts = counts.map((c) => ({ option_index: Number(c.option_index), count: Number(c.count) }))
-
-      if (playerId) {
-        const myAnswers = await query<Answer>(
-          `SELECT option_index FROM answers WHERE game_id = $1 AND question_id = $2 AND player_id = $3`,
-          [params.id, questionId, playerId]
-        )
-        if (myAnswers.length) myAnswer = myAnswers[0].option_index
-      }
-    }
-
     const players = await query<Player>(
-      'SELECT * FROM players WHERE game_id = $1 ORDER BY score DESC, joined_at ASC',
+      'SELECT * FROM players WHERE game_id = $1 ORDER BY joined_at ASC',
       [params.id]
     )
 
-    return NextResponse.json({ game, currentQuestion, players, answerCounts, myAnswer })
+    let currentQuestion: Question | null = null
+    let answerCounts: { option_index: number; count: number }[] = []
+    let myAnswer: number | null = null
+    let currentAnswererId: string | null = null
+    const turnNumber = game.current_question_index + 1
+    const totalTurns = (game.player_order || []).length
+
+    if (game.status === 'active' && game.player_order?.length > 0) {
+      currentAnswererId = game.player_order[game.current_question_index] ?? null
+
+      const questionId = game.question_ids?.[game.current_question_index]
+      if (questionId) {
+        const questions = await query<Question>('SELECT * FROM questions WHERE id = $1', [questionId])
+        if (questions.length) currentQuestion = questions[0]
+
+        const counts = await query<{ option_index: string; count: string }>(
+          `SELECT option_index, COUNT(*)::int as count FROM answers
+           WHERE game_id = $1 AND question_id = $2 GROUP BY option_index`,
+          [params.id, questionId]
+        )
+        answerCounts = counts.map(c => ({ option_index: Number(c.option_index), count: Number(c.count) }))
+
+        if (playerId) {
+          const myAnswers = await query<Answer>(
+            `SELECT option_index FROM answers WHERE game_id = $1 AND question_id = $2 AND player_id = $3`,
+            [params.id, questionId, playerId]
+          )
+          if (myAnswers.length) myAnswer = myAnswers[0].option_index
+        }
+      }
+    }
+
+    return NextResponse.json({ game, currentQuestion, currentAnswererId, players, answerCounts, myAnswer, turnNumber, totalTurns })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

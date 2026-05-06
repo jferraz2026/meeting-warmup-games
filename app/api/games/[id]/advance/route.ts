@@ -7,18 +7,20 @@ export async function POST(_: NextRequest, { params }: { params: { id: string } 
     const games = await query<Game>('SELECT * FROM games WHERE id = $1', [params.id])
     if (!games.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const game = games[0]
-    const nextIndex = game.current_question_index + 1
 
-    if (nextIndex >= game.question_ids.length) {
+    const nextIndex = game.current_question_index + 1
+    const totalTurns = (game.player_order || []).length
+
+    if (nextIndex >= totalTurns) {
       const result = await query(
-        `UPDATE games SET status = 'finished' WHERE id = $1 RETURNING *`,
+        `UPDATE games SET status = 'round_complete' WHERE id = $1 RETURNING *`,
         [params.id]
       )
       return NextResponse.json(result[0])
     }
 
     const result = await query(
-      `UPDATE games SET current_question_index = $1, status = 'active' WHERE id = $2 RETURNING *`,
+      `UPDATE games SET current_question_index = $1 WHERE id = $2 RETURNING *`,
       [nextIndex, params.id]
     )
     return NextResponse.json(result[0])

@@ -25,9 +25,12 @@ export async function GET() {
       CREATE TABLE IF NOT EXISTS games (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         code TEXT UNIQUE NOT NULL,
-        status TEXT DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'showing_results', 'finished')),
-        current_question_index INTEGER DEFAULT -1,
+        status TEXT DEFAULT 'waiting' CHECK (status IN ('waiting', 'active', 'round_complete', 'finished')),
+        current_question_index INTEGER DEFAULT 0,
         question_ids JSONB DEFAULT '[]',
+        player_order JSONB DEFAULT '[]',
+        used_question_ids JSONB DEFAULT '[]',
+        round_number INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `)
@@ -60,6 +63,14 @@ export async function GET() {
     await query(`CREATE INDEX IF NOT EXISTS idx_games_code ON games(code)`)
     await query(`CREATE INDEX IF NOT EXISTS idx_players_game_id ON players(game_id)`)
     await query(`CREATE INDEX IF NOT EXISTS idx_answers_game_question ON answers(game_id, question_id)`)
+
+    // Add new game columns
+    await query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS player_order JSONB DEFAULT '[]'`)
+    await query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS used_question_ids JSONB DEFAULT '[]'`)
+    await query(`ALTER TABLE games ADD COLUMN IF NOT EXISTS round_number INTEGER DEFAULT 0`)
+    // Update status constraint to include round_complete
+    await query(`ALTER TABLE games DROP CONSTRAINT IF EXISTS games_status_check`)
+    await query(`ALTER TABLE games ADD CONSTRAINT games_status_check CHECK (status IN ('waiting', 'active', 'round_complete', 'finished'))`)
 
     // Only reseed if no reaction questions exist yet
     const existing = await query(`SELECT COUNT(*)::int as count FROM questions WHERE question_type = 'reaction'`)

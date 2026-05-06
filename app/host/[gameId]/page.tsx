@@ -1,23 +1,42 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { GameState } from '@/lib/types'
-import { ANSWER_COLORS } from '@/lib/utils'
+import { GameState, Player } from '@/lib/types'
+import { REACTION_EMOJIS, REACTION_COLORS } from '@/lib/utils'
+
+const AVATARS = ['🐶','🐱','🐻','🦊','🐼','🦁','🐮','🐷','🐸','🦋','🦄','🦅','🌟','🎭','🚀','🎸','🍕','☕','🌈','⚡']
 
 export default function HostPage() {
   const { gameId } = useParams<{ gameId: string }>()
   const [state, setState] = useState<GameState | null>(null)
   const [error, setError] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(30)
-  const [timerActive, setTimerActive] = useState(false)
   const [origin, setOrigin] = useState('')
 
-  useEffect(() => { setOrigin(window.location.origin) }, [])
+  // Host as player
+  const [hostPlayerId, setHostPlayerId] = useState<string | null>(null)
+  const hostPlayerIdRef = useRef<string | null>(null)
+  const [hostName, setHostName] = useState('')
+  const [hostAvatar, setHostAvatar] = useState(AVATARS[0])
+  const [joiningAsPlayer, setJoiningAsPlayer] = useState(false)
+  const [joinError, setJoinError] = useState('')
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+    const stored = sessionStorage.getItem(`host_player_${gameId}`)
+    if (stored) {
+      setHostPlayerId(stored)
+      hostPlayerIdRef.current = stored
+    }
+  }, [gameId])
 
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch(`/api/games/${gameId}/state`)
+      const pid = hostPlayerIdRef.current
+      const url = pid
+        ? `/api/games/${gameId}/state?player_id=${pid}`
+        : `/api/games/${gameId}/state`
+      const res = await fetch(url)
       if (!res.ok) { setError('Game not found'); return }
       const data: GameState = await res.json()
       setState(data)
@@ -32,47 +51,55 @@ export default function HostPage() {
     return () => clearInterval(interval)
   }, [fetchState])
 
-  // Only activate timer for trivia questions
-  useEffect(() => {
-    if (state?.game.status === 'active' && state.currentQuestion?.question_type === 'trivia') {
-      setTimeLeft(30)
-      setTimerActive(true)
-    } else {
-      setTimerActive(false)
+  async function handleJoinAsPlayer(e: React.FormEvent) {
+    e.preventDefault()
+    if (!hostName.trim()) return
+    setJoiningAsPlayer(true)
+    setJoinError('')
+    try {
+      const res = await fetch('/api/players', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game_id: gameId, name: hostName.trim(), avatar: hostAvatar }),
+      })
+      const player: Player = await res.json()
+      if (!player.id) throw new Error('Failed')
+      sessionStorage.setItem(`host_player_${gameId}`, player.id)
+      setHostPlayerId(player.id)
+      hostPlayerIdRef.current = player.id
+    } catch {
+      setJoinError('Could not join. Try again.')
+    } finally {
+      setJoiningAsPlayer(false)
     }
-  }, [state?.game.current_question_index, state?.game.status, state?.currentQuestion?.question_type])
+  }
 
-  useEffect(() => {
-    if (!timerActive) return
-    if (timeLeft <= 0) { handleShowResults(); return }
-    const t = setTimeout(() => setTimeLeft(t => t - 1), 1000)
-    return () => clearTimeout(t)
-  }, [timerActive, timeLeft])
+  async function handleStartRound() {
+    setActionLoading(true)
+    await fetch(`/api/games/${gameId}/start-round`, { method: 'POST' })
+    setActionLoading(false)
+    fetchState()
+  }
 
-  async function handleStart() {
+  async function handleNextTurn() {
     setActionLoading(true)
     await fetch(`/api/games/${gameId}/advance`, { method: 'POST' })
     setActionLoading(false)
     fetchState()
   }
 
-  async function handleShowResults() {
-    setTimerActive(false)
-    await fetch(`/api/games/${gameId}/results`, { method: 'POST' })
-    fetchState()
-  }
-
-  async function handleNext() {
-    setActionLoading(true)
-    await fetch(`/api/games/${gameId}/advance`, { method: 'POST' })
-    setActionLoading(false)
-    fetchState()
-  }
-
-  async function handleFinish() {
-    setActionLoading(true)
-    await fetch(`/api/games/${gameId}/finish`, { method: 'POST' })
-    setActionLoading(false)
+  async function handleReact(optionIndex: number) {
+    if (!hostPlayerId || !state?.currentQuestion || state.myAnswer !== null) return
+    await fetch('/api/answers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        game_id: gameId,
+        question_id: state.currentQuestion.id,
+        player_id: hostPlayerId,
+        option_index: optionIndex,
+      }),
+    })
     fetchState()
   }
 
@@ -84,31 +111,71 @@ export default function HostPage() {
 
   if (!state) return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <p className="text-white text-xl animate-pulse">Loading...</p>
+      <p className="text-white animate-pulse">Loading...</p>
     </div>
   )
 
-  const { game, currentQuestion, players, answerCounts } = state
-  const totalAnswers = answerCounts.reduce((s, a) => s + a.count, 0)
+  const { game, currentQuestion, currentAnswererId, players, answerCounts, myAnswer, turnNumber, totalTurns } = state
   const joinUrl = `${origin}/play/${game.id}`
-  const isLastQuestion = game.current_question_index >= game.question_ids.length - 1
-  const isReaction = currentQuestion?.question_type === 'reaction'
+  const totalReactions = answerCounts.reduce((s, a) => s + a.count, 0)
+  const isMyTurn = hostPlayerId === currentAnswererId
+  const currentAnswerer = players.find(p => p.id === currentAnswererId)
 
-  const REACTION_BG = ['bg-yellow-400', 'bg-blue-500', 'bg-purple-500', 'bg-pink-500']
+  // HOST JOIN SCREEN (if not yet joined as player)
+  if (!hostPlayerId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <div className="text-center mb-6">
+            <div className="text-5xl mb-3">👑</div>
+            <h1 className="text-2xl font-bold text-white">You're the Host!</h1>
+            <p className="text-indigo-300 text-sm mt-1">Join as a player too — you'll get a turn to answer</p>
+          </div>
+          <form onSubmit={handleJoinAsPlayer} className="space-y-5">
+            <div>
+              <p className="text-indigo-300 text-sm mb-2 text-center">Choose your avatar</p>
+              <div className="grid grid-cols-5 gap-2">
+                {AVATARS.map(av => (
+                  <button key={av} type="button" onClick={() => setHostAvatar(av)}
+                    className={`text-3xl p-2 rounded-xl transition-all ${hostAvatar === av ? 'bg-indigo-500 ring-2 ring-white scale-110' : 'bg-white/10 hover:bg-white/20'}`}>
+                    {av}
+                  </button>
+                ))}
+              </div>
+              <p className="text-center text-4xl mt-3">{hostAvatar}</p>
+            </div>
+            <div>
+              <label className="block text-indigo-300 text-sm mb-1">Your name</label>
+              <input type="text" value={hostName} onChange={e => setHostName(e.target.value)}
+                placeholder="Enter your name..." maxLength={20} autoFocus
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-indigo-400 text-center text-lg" />
+            </div>
+            {joinError && <p className="text-red-400 text-sm text-center">{joinError}</p>}
+            <button type="submit" disabled={joiningAsPlayer || !hostName.trim()}
+              className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-xl font-bold rounded-2xl transition-all">
+              {joiningAsPlayer ? '⏳ Setting up...' : '👑 Enter as Host'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-5xl mx-auto">
+
+        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold">🎮 Host Dashboard</h1>
-            <p className="text-gray-400 text-sm">
-              Question {Math.max(0, game.current_question_index + 1)} of {game.question_ids.length}
-            </p>
+            <h1 className="text-xl font-bold flex items-center gap-2">
+              👑 Host
+              {game.round_number > 0 && <span className="text-gray-400 text-sm font-normal">Round {game.round_number}</span>}
+            </h1>
           </div>
           <div className="text-right">
-            <div className="text-3xl font-mono font-bold text-indigo-400">{game.code}</div>
-            <div className="text-xs text-gray-400">{players.length} player{players.length !== 1 ? 's' : ''} joined</div>
+            <div className="text-2xl font-mono font-bold text-indigo-400">{game.code}</div>
+            <div className="text-xs text-gray-400">{players.length} players</div>
           </div>
         </div>
 
@@ -119,144 +186,134 @@ export default function HostPage() {
             {game.status === 'waiting' && (
               <div className="bg-gray-800 rounded-2xl p-8 text-center">
                 <div className="text-5xl mb-4">👋</div>
-                <h2 className="text-2xl font-bold mb-2">Waiting for players...</h2>
-                <p className="text-gray-400 mb-4">Share this link in your meeting chat:</p>
-                <div className="bg-gray-700 rounded-xl px-4 py-3 font-mono text-sm text-indigo-300 break-all mb-2">
-                  {joinUrl}
-                </div>
-                <p className="text-gray-500 text-xs mb-4">Players add their name at the end of the URL, or join at <span className="text-indigo-400">{origin}</span></p>
+                <h2 className="text-2xl font-bold mb-3">Share this link</h2>
+                <div className="bg-gray-700 rounded-xl px-4 py-3 font-mono text-sm text-indigo-300 break-all mb-2">{joinUrl}</div>
                 <div className="bg-gray-700 rounded-xl p-4 mb-6">
-                  <p className="text-sm text-gray-400 mb-1">Game Code</p>
+                  <p className="text-sm text-gray-400 mb-1">Or share the code</p>
                   <p className="text-4xl font-mono font-bold text-yellow-400 tracking-widest">{game.code}</p>
                 </div>
-                <button
-                  onClick={handleStart}
-                  disabled={players.length === 0 || actionLoading}
-                  className="px-8 py-4 bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all"
-                >
-                  {players.length === 0 ? 'Waiting for players...' : '🚀 Start Game!'}
+                <button onClick={handleStartRound} disabled={players.length < 1 || actionLoading}
+                  className="px-8 py-4 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-xl font-bold rounded-2xl transition-all">
+                  {players.length < 1 ? 'Waiting for players...' : `🚀 Start Round (${players.length} players)`}
                 </button>
               </div>
             )}
 
-            {/* ACTIVE / SHOWING_RESULTS */}
-            {(game.status === 'active' || game.status === 'showing_results') && currentQuestion && (
+            {/* ACTIVE TURN */}
+            {game.status === 'active' && currentQuestion && (
               <div className="space-y-4">
-                {/* Header row */}
-                <div className="flex items-center gap-4">
-                  {!isReaction && game.status === 'active' && (
-                    <div className={`text-4xl font-mono font-bold w-16 text-center ${timeLeft <= 10 ? 'text-red-400' : 'text-white'}`}>
-                      {timeLeft}
-                    </div>
-                  )}
-                  {isReaction && (
-                    <div className="text-2xl">💬</div>
-                  )}
-                  <div className="flex-1 bg-gray-700 rounded-full h-3">
-                    {!isReaction && (
-                      <div
-                        className="bg-indigo-500 h-3 rounded-full transition-all"
-                        style={{ width: `${game.status === 'active' ? (timeLeft / 30) * 100 : 0}%` }}
-                      />
-                    )}
+                {/* Turn progress */}
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-400 text-sm">Turn {turnNumber} of {totalTurns}</span>
+                  <div className="flex-1 bg-gray-700 rounded-full h-2">
+                    <div className="bg-indigo-500 h-2 rounded-full transition-all" style={{ width: `${(turnNumber / totalTurns) * 100}%` }} />
                   </div>
-                  <div className="text-gray-400 text-sm">{totalAnswers}/{players.length} reacted</div>
+                  <span className="text-gray-400 text-sm">{totalReactions} reacted</span>
+                </div>
+
+                {/* Who's answering */}
+                <div className="bg-indigo-900/50 border border-indigo-500/30 rounded-2xl p-4 flex items-center gap-3">
+                  <span className="text-4xl">{currentAnswerer?.avatar ?? '🎤'}</span>
+                  <div>
+                    <p className="text-indigo-300 text-xs">Answering now</p>
+                    <p className="text-white font-bold text-lg">{currentAnswerer?.name ?? '...'}</p>
+                  </div>
+                  {isMyTurn && <span className="ml-auto text-yellow-400 text-sm font-bold">← That's you!</span>}
                 </div>
 
                 {/* Question */}
                 <div className="bg-gray-800 rounded-2xl p-6">
-                  {isReaction && (
-                    <p className="text-indigo-400 text-sm mb-2 text-center">💬 Icebreaker — discuss out loud!</p>
-                  )}
-                  <p className="text-xl font-semibold text-center leading-relaxed">{currentQuestion.text}</p>
+                  <p className="text-white text-xl font-semibold text-center leading-relaxed">{currentQuestion.text}</p>
                 </div>
 
-                {/* Answer options */}
-                <div className="grid grid-cols-2 gap-3">
-                  {currentQuestion.options.map((opt, i) => {
-                    const count = answerCounts.find(a => a.option_index === i)?.count ?? 0
-                    const pct = totalAnswers > 0 ? Math.round((count / totalAnswers) * 100) : 0
-                    const isCorrect = !isReaction && i === currentQuestion.correct_index
-                    const showCorrect = game.status === 'showing_results' && !isReaction
+                {/* Host reacts if not their turn */}
+                {!isMyTurn && (
+                  <div>
+                    <p className="text-gray-400 text-xs text-center mb-2">
+                      {myAnswer !== null ? `You reacted: ${REACTION_EMOJIS[myAnswer]}` : 'React while they answer:'}
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {REACTION_EMOJIS.map((emoji, i) => {
+                        const rc = REACTION_COLORS[i]
+                        const isMyReaction = myAnswer === i
+                        return (
+                          <button key={i} onClick={() => handleReact(i)} disabled={myAnswer !== null}
+                            className={`${isMyReaction ? `${rc.bg} ring-2 ring-white` : myAnswer !== null ? 'bg-gray-700 opacity-40' : `${rc.bg} hover:opacity-90`} rounded-xl py-3 text-2xl transition-all disabled:cursor-default`}>
+                            {emoji}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
-                    let bgClass: string
-                    if (isReaction) {
-                      bgClass = REACTION_BG[i]
-                    } else if (showCorrect) {
-                      bgClass = isCorrect ? 'bg-green-500' : 'bg-gray-700 opacity-60'
-                    } else {
-                      bgClass = ANSWER_COLORS[i].bg
-                    }
+                {isMyTurn && (
+                  <div className="bg-yellow-500/20 border border-yellow-500/40 rounded-xl p-3 text-center">
+                    <p className="text-yellow-300 font-bold">🎤 It's your turn! Answer out loud.</p>
+                    <p className="text-yellow-400/70 text-xs mt-1">Others are reacting to your answer</p>
+                  </div>
+                )}
 
-                    return (
-                      <div key={i} className={`${bgClass} rounded-xl p-4 relative overflow-hidden transition-all`}>
-                        {totalAnswers > 0 && (
-                          <div className="absolute bottom-0 left-0 h-1 bg-white/30 transition-all" style={{ width: `${pct}%` }} />
-                        )}
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-white text-2xl">{opt}</span>
-                          <span className="text-white/90 font-mono text-sm font-bold">
-                            {count}{pct > 0 ? ` (${pct}%)` : ''}
-                          </span>
+                {/* Reaction distribution */}
+                <div className="bg-gray-800 rounded-2xl p-4">
+                  <p className="text-gray-400 text-xs mb-3">Reactions ({totalReactions})</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {REACTION_EMOJIS.map((emoji, i) => {
+                      const count = answerCounts.find(a => a.option_index === i)?.count ?? 0
+                      const pct = totalReactions > 0 ? Math.round((count / totalReactions) * 100) : 0
+                      const rc = REACTION_COLORS[i]
+                      return (
+                        <div key={i} className={`${rc.bg} rounded-xl p-3 text-center`}>
+                          <div className="text-2xl mb-1">{emoji}</div>
+                          <div className="text-white font-bold">{count}</div>
+                          {pct > 0 && <div className="text-white/70 text-xs">{pct}%</div>}
                         </div>
-                        {showCorrect && isCorrect && (
-                          <div className="text-white text-xs mt-1">✓ Correct answer</div>
-                        )}
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                  </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-3">
-                  {game.status === 'active' && (
-                    <button
-                      onClick={handleShowResults}
-                      className="flex-1 py-3 bg-yellow-500 hover:bg-yellow-600 text-black font-bold rounded-xl transition-all"
-                    >
-                      {isReaction ? '📊 Show Reactions' : '📊 Show Results'}
-                    </button>
-                  )}
-                  {game.status === 'showing_results' && (
-                    <button
-                      onClick={isLastQuestion ? handleFinish : handleNext}
-                      disabled={actionLoading}
-                      className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-bold rounded-xl transition-all"
-                    >
-                      {isLastQuestion ? '🏁 Finish Game' : '➡️ Next Question'}
-                    </button>
-                  )}
-                </div>
+                {/* Next turn button */}
+                <button onClick={handleNextTurn} disabled={actionLoading}
+                  className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-lg font-bold rounded-2xl transition-all">
+                  {actionLoading ? '...' : turnNumber >= totalTurns ? '🏁 End Round' : '➡️ Next Turn'}
+                </button>
               </div>
             )}
 
-            {/* FINISHED */}
-            {game.status === 'finished' && (
+            {/* ROUND COMPLETE */}
+            {game.status === 'round_complete' && (
               <div className="bg-gray-800 rounded-2xl p-8 text-center">
                 <div className="text-5xl mb-4">🎉</div>
-                <h2 className="text-3xl font-bold mb-2">That's a wrap!</h2>
-                <p className="text-gray-400">Great warmup session!</p>
+                <h2 className="text-2xl font-bold mb-2">Round {game.round_number} Complete!</h2>
+                <p className="text-gray-400 mb-6">Everyone had their turn.</p>
+                <button onClick={handleStartRound} disabled={actionLoading}
+                  className="px-8 py-4 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white text-xl font-bold rounded-2xl transition-all">
+                  🔄 Start Round {game.round_number + 1}
+                </button>
               </div>
             )}
           </div>
 
           {/* Players sidebar */}
           <div className="bg-gray-800 rounded-2xl p-4">
-            <h3 className="font-bold text-gray-300 mb-3 flex items-center gap-2">
-              <span>👥</span> Players
-            </h3>
+            <h3 className="font-bold text-gray-300 mb-3">👥 Players ({players.length})</h3>
             <div className="space-y-2">
-              {players.length === 0 && (
-                <p className="text-gray-500 text-sm text-center py-4">No players yet</p>
-              )}
-              {players.map((player, i) => (
-                <div key={player.id} className="flex items-center gap-2 py-2 border-b border-gray-700 last:border-0">
-                  <span className="text-sm text-gray-500 w-5">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`}</span>
-                  <span className="text-xl">{player.avatar}</span>
-                  <span className="flex-1 font-medium truncate text-sm">{player.name}</span>
-                  <span className="text-indigo-400 font-mono text-sm font-bold">{player.score}</span>
-                </div>
-              ))}
+              {players.length === 0 && <p className="text-gray-500 text-sm text-center py-4">No players yet</p>}
+              {players.map((player) => {
+                const isAnswering = player.id === currentAnswererId && game.status === 'active'
+                const isHost = player.id === hostPlayerId
+                return (
+                  <div key={player.id} className={`flex items-center gap-2 py-2 px-2 rounded-xl border-b border-gray-700 last:border-0 ${isAnswering ? 'bg-indigo-900/40 border border-indigo-500/30' : ''}`}>
+                    <span className="text-xl">{player.avatar}</span>
+                    <span className="flex-1 font-medium truncate text-sm">
+                      {player.name}
+                      {isHost && <span className="text-yellow-400 text-xs ml-1">👑</span>}
+                    </span>
+                    {isAnswering && <span className="text-xs text-indigo-400">🎤</span>}
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
